@@ -16,6 +16,8 @@ BUCKETS = {
     "momentum": "World Momentum",
     "small": "World Small Caps",
     "em": "Emerging Markets IMI",
+    "stocks": "Einzelaktien",
+    "other_equity": "Weitere Aktien-ETFs",
     "safe": "Sicherheitsanteil",
 }
 KNOWN_ISINS = {
@@ -26,7 +28,9 @@ KNOWN_ISINS = {
 }
 DEFAULT_CONFIG = {
     "currency": "EUR",
-    "targets": {"world": 17.5, "quality": 10, "momentum": 10, "small": 7.5, "em": 5, "safe": 50},
+    "targets": {"world": 17.5, "quality": 10, "momentum": 10, "small": 7.5, "em": 5, "stocks": 0, "other_equity": 0, "safe": 50},
+    "custom_buckets": {},
+    "targets_confirmed": False,
     "equity_band_pp": 5,
     "bucket_band_relative": 25,
     "bucket_band_pp": 5,
@@ -38,6 +42,24 @@ DEFAULT_CONFIG = {
 
 class ValidationError(ValueError):
     pass
+
+
+def bucket_labels(config):
+    return {**BUCKETS, **{key: item["label"] for key, item in config.get("custom_buckets", {}).items()}}
+
+
+def is_equity(key, config):
+    if key in BUCKETS:
+        return key != "safe"
+    return config.get("custom_buckets", {}).get(key, {}).get("asset_class") == "equity"
+
+
+def equity_target(config):
+    return sum(value for key, value in config["targets"].items() if is_equity(key, config))
+
+
+def outside_band(actual, target, config):
+    return (target == 0 and actual > 0) or abs(actual-target) > config.get("bucket_band_pp", 5) + 1e-9 or abs(actual-target) > target*config["bucket_band_relative"]/100 + 1e-9
 
 
 def number(value, field="Zahl", *, german=False):
@@ -77,10 +99,31 @@ def validate_config(data):
     if currency not in {"EUR", "USD", "CHF", "GBP"}:
         raise ValidationError("Referenzwährung muss EUR, USD, CHF oder GBP sein.")
     config["currency"] = currency
-    targets = data.get("targets", config["targets"])
-    if not isinstance(targets, dict) or set(targets) != set(BUCKETS):
-        raise ValidationError("Zielgewichte müssen alle sechs Bausteine enthalten.")
-    config["targets"] = {k: number(v, BUCKETS[k]) for k, v in targets.items()}
+    custom = data.get("custom_buckets", {})
+    if not isinstance(custom, dict) or len(custom) > 20:
+        raise ValidationError("Höchstens 20 eigene Bausteine sind erlaubt.")
+    labels = {label.casefold() for label in BUCKETS.values()}
+    for key, item in custom.items():
+        if not re.fullmatch(r"custom_[a-z0-9_]{1,32}", key) or not isinstance(item, dict):
+            raise ValidationError("Ungültiger eigener Baustein.")
+        label = str(item.get("label", "")).strip()
+        if not 1 <= len(label) <= 60 or any(ord(c) < 32 for c in label) or label.casefold() in labels:
+            raise ValidationError("Bausteinnamen müssen eindeutig und zwischen 1 und 60 Zeichen lang sein.")
+        if item.get("asset_class") not in {"equity", "non_equity"}:
+            raise ValidationError("Baustein als Aktienanlage oder andere Anlage einordnen.")
+        labels.add(label.casefold())
+        config["custom_buckets"][key] = {"label": label, "asset_class": item["asset_class"]}
+    if not isinstance(data.get("targets_confirmed", False), bool):
+        raise ValidationError("Zielbestätigung muss wahr oder falsch sein.")
+    config["targets_confirmed"] = data.get("targets_confirmed", False)
+    targets = copy.deepcopy(data.get("targets", config["targets"]))
+    if isinstance(targets, dict):
+        for key in ["stocks", "other_equity"]:
+            targets.setdefault(key, 0)
+    buckets = bucket_labels(config)
+    if not isinstance(targets, dict) or set(targets) != set(buckets):
+        raise ValidationError("Zielgewichte müssen alle vorhandenen Bausteine enthalten.")
+    config["targets"] = {k: number(v, buckets[k]) for k, v in targets.items()}
     if any(v < 0 or v > 100 for v in config["targets"].values()) or not math.isclose(sum(config["targets"].values()), 100, abs_tol=1e-6):
         raise ValidationError("Zielgewichte müssen nichtnegativ sein und zusammen 100 % ergeben.")
     for key, low, high in [("equity_band_pp", 1, 25), ("bucket_band_relative", 1, 100), ("bucket_band_pp", 0.1, 25), ("drawdown_alert_pct", 1, 90), ("stale_weekdays", 0, 30), ("reconcile_weekdays", 1, 90)]:
@@ -222,7 +265,7 @@ def parse_holdings(text, mapping, config, *, german=False, valuation_date=None):
         cost = number(get("cost_basis"), f"Zeile {i}, Einstandswert", german=german) if mapping.get("cost_basis") and get("cost_basis") else None
         if cost is not None and cost < 0:
             raise ValidationError("Einstandswert darf nicht negativ sein.")
-        result.append({"name": name, "isin": isin, "bucket": bucket if bucket in BUCKETS else "", "value": value, "currency": currency, "as_of": as_of, "source": "csv", "quantity": quantity, "price": value / quantity if quantity else None, "cost_basis": cost})
+        result.append({"name": name, "isin": isin, "bucket": bucket if bucket in bucket_labels(config) else "", "value": value, "currency": currency, "as_of": as_of, "source": "csv", "quantity": quantity, "price": value / quantity if quantity else None, "cost_basis": cost})
     return result
 
 
@@ -231,7 +274,7 @@ def validate_holdings(rows, config):
         raise ValidationError("Ungültige Bestandsliste.")
     result = []
     for i, row in enumerate(rows, 1):
-        if not isinstance(row, dict) or row.get("bucket") not in BUCKETS:
+        if not isinstance(row, dict) or row.get("bucket") not in bucket_labels(config):
             raise ValidationError(f"Position {i}: Bitte einen Baustein auswählen.")
         name = str(row.get("name", "")).strip()
         isin = str(row.get("isin", "")).strip().upper()
@@ -289,7 +332,7 @@ def performance(history, config):
     if len(history) < 2:
         return None
     first = history[0]
-    mix_equity = (100 - config["targets"]["safe"]) / 100
+    mix_equity = equity_target(config) / 100
     total_factor = equity_factor = peak = 1.0
     max_drawdown = 0.0
     points = []
@@ -321,22 +364,23 @@ def analyze(state, *, today=None):
     today = today or date.today()
     config = state["config"]
     holdings = state["holdings"]
-    values = {key: sum(h["value"] for h in holdings if h["bucket"] == key) for key in BUCKETS}
+    buckets = bucket_labels(config)
+    values = {key: sum(h["value"] for h in holdings if h["bucket"] == key) for key in buckets}
     total = sum(values.values())
     alerts = []
     allocations = []
-    for key, label in BUCKETS.items():
+    for key, label in buckets.items():
         actual = values[key] / total * 100 if total else None
-        target = config["targets"][key]
+        target = config["targets"].get(key, 0)
         delta = actual - target if actual is not None else None
-        outside = delta is not None and (abs(delta) > config.get("bucket_band_pp", 5) or abs(delta) > max(target * config["bucket_band_relative"] / 100, 0.01))
+        outside = actual is not None and outside_band(actual, target, config)
         allocations.append({"key": key, "label": label, "value": values[key], "target_pct": target, "actual_pct": actual, "delta_pp": delta, "target_gap": total * target / 100 - values[key], "outside_band": outside})
         if outside:
             alerts.append({"code": f"drift_{key}", "level": "review", "title": f"{label}: Gewicht prüfen", "detail": f"Ist {actual:.1f} %, Ziel {target:.1f} %. Beim nächsten Rebalancing prüfen; Kosten und Steuern berücksichtigen."})
-    equity_pct = (total - values["safe"]) / total * 100 if total else None
-    equity_target = 100 - config["targets"]["safe"]
-    if equity_pct is not None and abs(equity_pct - equity_target) > config["equity_band_pp"]:
-        alerts.insert(0, {"code": "equity_band", "level": "review", "title": "Aktienquote außerhalb des Zielbands", "detail": f"Aktuell {equity_pct:.1f} %, Ziel {equity_target:.1f} % ± {config['equity_band_pp']:g} Prozentpunkte. Sind Sicherheitsanlagen vollständig erfasst?"})
+    equity_pct = sum(value for key, value in values.items() if is_equity(key, config)) / total * 100 if total else None
+    target_equity = equity_target(config)
+    if equity_pct is not None and abs(equity_pct - target_equity) > config["equity_band_pp"]:
+        alerts.insert(0, {"code": "equity_band", "level": "review", "title": "Aktienquote außerhalb des Zielbands", "detail": f"Aktuell {equity_pct:.1f} %, Ziel {target_equity:.1f} % ± {config['equity_band_pp']:g} Prozentpunkte. Sind andere Anlagen vollständig erfasst?"})
     stale = [h["name"] for h in holdings if h["value"] > 0 and weekdays_since(date.fromisoformat(h["as_of"]), today) > config["stale_weekdays"]]
     if stale:
         alerts.insert(0, {"code": "stale", "level": "data", "title": "Bewertungen aktualisieren", "detail": f"{len(stale)} Position(en) älter als {config['stale_weekdays']:g} Wochentage. Feiertage werden nicht berücksichtigt; der gespeicherte Stand ist veraltet."})
@@ -357,14 +401,14 @@ def analyze(state, *, today=None):
         alerts.append({"code": "no_holdings", "level": "data", "title": "Noch keine Depotdaten", "detail": "Bestände importieren und Sicherheitsanlagen ergänzen. Demo-Daten sind separat verfügbar."})
     if not perf:
         alerts.append({"code": "no_history", "level": "data", "title": "Renditevergleich noch offen", "detail": "Mindestens zwei Bewertungen mit Geldflüssen und Referenzständen werden benötigt: automatisch aufbauen oder als Historie importieren. Ein einzelner Depotstand genügt nicht."})
-    return {"total": total, "equity_pct": equity_pct, "equity_target": equity_target, "allocations": allocations, "performance": perf, "alerts": alerts, "oldest_valuation": min((h["as_of"] for h in holdings), default=None), "latest_valuation": max((h["as_of"] for h in holdings), default=None), "as_of": today.isoformat(), "demo": state.get("demo", False)}
+    return {"total": total, "equity_pct": equity_pct, "equity_target": target_equity, "allocations": allocations, "performance": perf, "alerts": alerts, "oldest_valuation": min((h["as_of"] for h in holdings), default=None), "latest_valuation": max((h["as_of"] for h in holdings), default=None), "as_of": today.isoformat(), "demo": state.get("demo", False)}
 
 
 def demo_state():
     today = date.today()
     config = copy.deepcopy(DEFAULT_CONFIG)
     values = [18600, 11000, 11600, 6900, 4900, 47000]
-    holdings = [{"name": BUCKETS[key] + " · Beispiel", "isin": next((i for i, b in KNOWN_ISINS.items() if b == key), ""), "bucket": key, "value": val, "currency": "EUR", "as_of": today.isoformat(), "source": "demo"} for key, val in zip(BUCKETS, values)]
+    holdings = [{"name": BUCKETS[key] + " · Beispiel", "isin": next((i for i, b in KNOWN_ISINS.items() if b == key), ""), "bucket": key, "value": val, "currency": "EUR", "as_of": today.isoformat(), "source": "demo"} for key, val in zip(["world", "quality", "momentum", "small", "em", "safe"], values)]
     history = []
     for i in range(53):
         stock = 50000 * (1 + 0.06 * i / 52 + 0.04 * math.sin(i / 5))

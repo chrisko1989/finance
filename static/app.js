@@ -2,7 +2,7 @@
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
-const colors = ["#087f73", "#79b7a1", "#b9d5c5", "#ddb778", "#819baf", "#e1e8e8"];
+const colors = ["#087f73", "#79b7a1", "#b9d5c5", "#ddb778", "#819baf", "#986fba", "#d78b70", "#e1e8e8"];
 const fields = {name:"Bezeichnung *", isin:"ISIN", value:"Gesamtwert", quantity:"Stückzahl", price:"Kurs", currency:"Währung des Werts", as_of:"Bewertungsdatum", bucket:"Baustein", cost_basis:"Einstandswert (optional)"};
 let current = null;
 let demo = false;
@@ -89,14 +89,14 @@ function render() {
   $("#performance-chart").hidden = !p;
   $("#chart-mode").disabled = !p;
   $("#donut-count").textContent = a.allocations.filter(x => x.value > 0).length;
-  replace($("#allocation-legend"), a.allocations.map(row => {
+  replace($("#allocation-legend"), a.allocations.map((row,i) => {
     const node = element("div");
-    node.append(element("i", undefined, `swatch c-${row.key}`), element("span",row.label),element("strong",percent(row.actual_pct)));
+    node.append(element("i", undefined, `swatch palette-${i % colors.length}`), element("span",row.label),element("strong",percent(row.actual_pct)));
     return node;
   }));
-  replace($("#allocation-table"), a.allocations.map(row => {
+  replace($("#allocation-table"), a.allocations.map((row,i) => {
     const tr = element("tr"), name = element("td");
-    name.append(element("i",undefined,`swatch c-${row.key}`),document.createTextNode(row.label));
+    name.append(element("i",undefined,`swatch palette-${i % colors.length}`),document.createTextNode(row.label));
     const delta = element("td");
     delta.append(element("span",row.delta_pp == null ? "—" : `${signed(row.delta_pp)} PP`, `delta${row.outside_band ? " warn" : ""}`));
     tr.append(name,element("td",percent(row.actual_pct)),element("td",percent(row.target_pct)),delta);
@@ -132,11 +132,12 @@ function render() {
     const wrap = element("label",`${label} (%)`);
     const input = element("input");
     Object.assign(input,{type:"number",min:0,max:100,step:0.1,required:true,value:config.targets[key],id:`target-${key}`});
-    input.addEventListener("input",updateSum);
+    input.addEventListener("input",()=>{updateSum();$("#targets-confirmed").checked=false;});
     wrap.append(input);
     return wrap;
   }));
   $("#currency").value = config.currency;
+  $("#targets-confirmed").checked = config.targets_confirmed;
   $("#equity-band").value = config.equity_band_pp;
   $("#bucket-band").value = config.bucket_band_relative;
   $("#bucket-band-pp").value = config.bucket_band_pp;
@@ -175,7 +176,7 @@ function drawCharts() {
     current.analysis.allocations.forEach((row,i) => {
       if (!row.actual_pct) return;
       const end=start+row.actual_pct/100*Math.PI*2;
-      ctx.strokeStyle=colors[i];ctx.beginPath();ctx.arc(cx,cy,r,start+.012,Math.max(start+.012,end-.012));ctx.stroke();start=end;
+      ctx.strokeStyle=colors[i % colors.length];ctx.beginPath();ctx.arc(cx,cy,r,start+.012,Math.max(start+.012,end-.012));ctx.stroke();start=end;
     });
   }
   drawLine();
@@ -297,7 +298,7 @@ $("#cash-form").addEventListener("submit",event=>{
 $("#settings-form").addEventListener("submit",event=>{
   event.preventDefault();run(event.submitter,async()=>{
     const targets=Object.fromEntries(Object.keys(current.buckets).map(k=>[k,Number($(`#target-${k}`).value)]));
-    const config={currency:$("#currency").value,targets,equity_band_pp:Number($("#equity-band").value),bucket_band_relative:Number($("#bucket-band").value),bucket_band_pp:Number($("#bucket-band-pp").value),reconcile_weekdays:Number($("#reconcile-days").value),drawdown_alert_pct:Number($("#drawdown-limit").value),stale_weekdays:Number($("#stale-days").value)};
+    const config={currency:$("#currency").value,targets,custom_buckets:current.state.config.custom_buckets,targets_confirmed:$("#targets-confirmed").checked,equity_band_pp:Number($("#equity-band").value),bucket_band_relative:Number($("#bucket-band").value),bucket_band_pp:Number($("#bucket-band-pp").value),reconcile_weekdays:Number($("#reconcile-days").value),drawdown_alert_pct:Number($("#drawdown-limit").value),stale_weekdays:Number($("#stale-days").value)};
     current=await api("/api/config",{config,revision:current.state.revision});
     render();message("Zielaufteilung und Prüfregeln gespeichert. Die Referenz wurde mit diesen Startgewichten neu berechnet.");
   },true);

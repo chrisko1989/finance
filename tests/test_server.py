@@ -180,6 +180,48 @@ class ServerTests(unittest.TestCase):
         self.assertIsNotNone(data["analysis"]["monitor"]["last_error"])
         self.assertEqual(data["analysis"]["decision"]["label"], "DATEN PRÜFEN")
 
+    def test_add_and_remove_custom_bucket_preserves_existing_targets(self):
+        status, data = self.request("/api/buckets", {"label": "Europa-Aktien", "asset_class": "equity", "revision": 0})
+        self.assertEqual(status, 200)
+        key = next(iter(data["state"]["config"]["custom_buckets"]))
+        self.assertEqual(data["buckets"][key], "Europa-Aktien")
+        self.assertEqual(data["state"]["config"]["targets"][key], 0)
+        self.assertEqual(data["state"]["config"]["targets"]["safe"], 50)
+        self.assertFalse(data["state"]["config"]["targets_confirmed"])
+        self.assertEqual(self.request("/api/buckets/remove", {"key": "stocks", "revision": 1})[0], 400)
+        status, removed = self.request("/api/buckets/remove", {"key": key, "revision": 1})
+        self.assertEqual(status, 200)
+        self.assertNotIn(key, removed["buckets"])
+
+    def test_used_custom_bucket_cannot_be_removed_or_reclassified(self):
+        _, data = self.request("/api/buckets", {"label": "Anleihen", "asset_class": "non_equity", "revision": 0})
+        key = next(iter(data["state"]["config"]["custom_buckets"]))
+        self.assertEqual(self.request("/api/holdings", {"holdings": [{**self.holding(), "bucket": key}], "revision": 1})[0], 200)
+        self.assertEqual(self.request("/api/buckets/remove", {"key": key, "revision": 2})[0], 400)
+        config = copy.deepcopy(self.store.read()["config"])
+        config["custom_buckets"][key]["asset_class"] = "equity"
+        self.assertEqual(self.request("/api/config", {"config": config, "revision": 2})[0], 400)
+        self.assertEqual(self.store.read()["revision"], 2)
+
+    def test_custom_bucket_import_and_new_stock_category(self):
+        _, data = self.request("/api/buckets", {"label": "Europa-Aktien", "asset_class": "equity", "revision": 0})
+        key = next(iter(data["state"]["config"]["custom_buckets"]))
+        csv = f"name,value,bucket,as_of\nExample,1000,{key},2024-01-01"
+        _, inspection = self.request("/api/inspect", {"csv": csv})
+        _, preview = self.request("/api/preview", {"csv": csv, "mapping": inspection["mapping"]})
+        self.assertEqual(preview["holdings"][0]["bucket"], key)
+        self.assertEqual(self.request("/api/holdings", {"holdings": [{**self.holding(), "bucket": "stocks"}], "revision": 1})[0], 200)
+
+    def test_recommendation_endpoint_is_read_only_and_blocks_missing_data(self):
+        before = self.store.read()
+        status, data = self.request("/api/recommendations", {"amount": 500, "fee": 1, "allow_sales": True})
+        self.assertEqual(status, 200)
+        self.assertEqual(data["status"], "blocked")
+        self.assertEqual(data["rows"], [])
+        self.assertEqual(self.store.read(), before)
+        self.assertEqual(self.request("/api/recommendations", {"allow_sales": "yes"})[0], 400)
+        self.assertIn(b"trade-form", self.request("/decisions.js")[1])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -5,7 +5,7 @@ import json
 import math
 import re
 
-from .core import DEFAULT_CONFIG, ValidationError, iso_date, number, read_csv
+from .core import DEFAULT_CONFIG, ValidationError, iso_date, number, read_csv, is_equity
 
 
 def instrument_id(row):
@@ -35,6 +35,8 @@ def normalize_state(state):
     state["schema_version"] = 2
     for key, value in DEFAULT_CONFIG.items():
         state["config"].setdefault(key, copy.deepcopy(value))
+    for key in ["stocks", "other_equity"]:
+        state["config"]["targets"].setdefault(key, 0)
     state["holdings"] = normalize_holdings(state["holdings"])
     state.setdefault("opening_holdings", copy.deepcopy(state["holdings"]))
     state["opening_holdings"] = normalize_holdings(state["opening_holdings"])
@@ -140,7 +142,7 @@ def replay(state, until):
         position = positions.get(tx["instrument_id"])
         if kind in {"BUY", "SELL", "SPLIT", "DIVIDEND"} and position is None:
             raise ValidationError("Transaktion nach dem Ausgangsstand verweist auf eine fehlende Position.")
-        equity = position is not None and position["bucket"] != "safe"
+        equity = position is not None and is_equity(position["bucket"], state["config"])
         if kind in {"BUY", "SELL", "SPLIT"}:
             if position is None:
                 raise ValidationError("Transaktion nach dem Ausgangsstand verweist auf eine fehlende Position.")

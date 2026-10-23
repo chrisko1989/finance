@@ -6,8 +6,9 @@ from datetime import date, timedelta
 from decimal import Decimal, ROUND_FLOOR
 from urllib.parse import urlsplit
 
-from .core import BUCKETS, ValidationError, analyze as basic_analyze, iso_date, number, read_csv, weekdays_since
+from .core import ValidationError, analyze as basic_analyze, iso_date, number, read_csv, weekdays_since, bucket_labels
 from .ledger import normalize_state, valuation_fingerprint, ledger_fingerprint
+from .signals import market_context
 
 
 def selected_history(state):
@@ -40,7 +41,7 @@ def period_metrics(perf):
     return {"periods": result, "volatility_annualized": volatility, "volatility_observations": len(returns) if daily else 0}
 
 
-def contribution_plan(state, amount, fee_per_purchase=0):
+def contribution_plan(state, amount, fee_per_purchase=0, *, allow_empty=False):
     """Allocate a fixed fresh-cash budget to deficits including its denominator effect."""
     amount = number(amount, "Sparrate")
     fee = number(fee_per_purchase, "Gebühr je Kauf")
@@ -48,15 +49,17 @@ def contribution_plan(state, amount, fee_per_purchase=0):
         raise ValidationError("Ungültiger Sparbetrag oder Gebühr.")
     cents = int((Decimal(str(amount))*100).quantize(Decimal("1")))
     fee_cents = int((Decimal(str(fee))*100).quantize(Decimal("1")))
-    values = {k: sum(h["value"] for h in state["holdings"] if h["bucket"] == k) for k in BUCKETS}
+    amount, fee = cents/100, fee_cents/100
+    buckets = bucket_labels(state["config"])
+    values = {k: sum(h["value"] for h in state["holdings"] if h["bucket"] == k) for k in buckets}
     total = sum(values.values())
-    if total <= 0:
+    if total <= 0 and not allow_empty:
         raise ValidationError("Für eine Sparratenplanung zuerst Bestände erfassen.")
     targets = state["config"]["targets"]
-    weights = {k: max(0, (total+amount)*targets[k]/100-values[k]) for k in BUCKETS}
+    weights = {k: max(0, (total+amount)*targets.get(k,0)/100-values[k]) for k in buckets}
     active = {k for k,v in weights.items() if v>0}
     # Fees can make very small ETF purchases uneconomic; exclude those rows.
-    for _ in range(7):
+    for _ in range(len(buckets)+1):
         fees = fee_cents*len(active-{"safe"})
         budget = max(0,cents-fees)
         gaps = {k:max(0,(total+budget/100)*targets[k]/100-values[k]) for k in active}
@@ -76,7 +79,7 @@ def contribution_plan(state, amount, fee_per_purchase=0):
     for key in order[:remainder]:
         rounded[key]+=1
     after_total=total+budget/100
-    rows=[{"key":k,"label":BUCKETS[k],"amount":rounded.get(k,0)/100,"fee":fee if k in active and k!="safe" else 0,"before_pct":values[k]/total*100,"after_pct":(values[k]+rounded.get(k,0)/100)/after_total*100,"target_pct":targets[k]} for k in BUCKETS]
+    rows=[{"key":k,"label":buckets[k],"amount":rounded.get(k,0)/100,"fee":fee if k in active and k!="safe" else 0,"before_pct":values[k]/total*100 if total else 0,"after_pct":(values[k]+rounded.get(k,0)/100)/after_total*100,"target_pct":targets.get(k,0)} for k in buckets]
     return {"amount": cents/100, "fees": fees/100, "unallocated_cash": 0, "rows": rows, "note": "Nur neue Mittel; keine Verkäufe. Gebühren aus dem Budget. Cent-Beträge, keine Order und keine Stückzahlrundung. Keine Steuerberechnung."}
 
 
@@ -126,6 +129,12 @@ def analyze(state, *, today=None):
     result=basic_analyze({**state,"history":history},today=today)
     result.update(period_metrics(result["performance"]))
     alerts=result["alerts"]
+    context=market_context(state,today=today)
+    result["market_context"]=context
+    if context["signals"]:
+        alerts.append({"code":"market_risk","level":"review","title":"Marktlage: zusätzliche Risikohinweise","detail":" ".join(s["text"] for s in context["signals"])+" Keine automatische Handelsentscheidung."})
+    if state["holdings"] and not state["config"].get("targets_confirmed"):
+        alerts.append({"code":"targets_unconfirmed","level":"review","title":"Zielgewichte für Vorschläge bestätigen","detail":"Neue Bausteine starten mit 0 %. Erst die gesamte Zielaufteilung bewusst festlegen und bestätigen; daraus wird vorher kein Verkaufsvorschlag abgeleitet."})
     if state["automatic_history"]:
         last_auto=state["automatic_history"][-1]
         if state.get("automatic_baseline") != valuation_fingerprint(state) or last_auto.get("ledger_hash") != ledger_fingerprint(state,last_auto["date"]):

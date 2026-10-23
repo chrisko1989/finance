@@ -1,6 +1,6 @@
-# Depotblick 0.2
+# Depotblick 0.3
 
-Lokaler Portfoliomonitor für das besprochene ETF-Musterportfolio: ING-orientierter CSV-Import, kostenlose Tageskurse, Buchungen, nachvollziehbare Renditeberechnung, Sparratenplan und Hinweise ausschließlich im Dashboard. Python ≥3.11, Standardbibliothek, keine Zugangsdaten oder externen Laufzeitpakete. Die Anwendung führt keine Orders aus.
+Lokaler Portfoliomonitor für das besprochene ETF-Musterportfolio: ING-orientierter CSV-Import, kostenlose Tageskurse, Buchungen, nachvollziehbare Renditeberechnung, Sparratenplan, Kauf-/Verkaufsvorschläge und Marktlage-Check. Hinweise bleiben ausschließlich im Dashboard. Python ≥3.11, Standardbibliothek, keine Zugangsdaten oder externen Laufzeitpakete. Die Anwendung führt keine Orders aus.
 
 ## Vorschau
 
@@ -12,6 +12,13 @@ Die folgenden Screenshots zeigen ausschließlich fiktive Demodaten. Sie sind dir
 <summary>Mobilansicht anzeigen</summary>
 
 <img src="docs/screenshots/demo-mobile.png" alt="Depotblick auf dem Smartphone mit fiktiven Demodaten" width="390">
+
+</details>
+
+<details>
+<summary>Kauf- und Verkaufsvorschläge ansehen (fiktive Testdaten)</summary>
+
+![Kauf- und Verkaufsvorschläge mit fiktiven Testdaten](docs/screenshots/recommendations-desktop.png)
 
 </details>
 
@@ -50,6 +57,8 @@ Eine manuell importierte Depot-Renditehistorie und die automatische Reihe bleibe
 | World Momentum | 10 % |
 | World Small Caps | 7,5 % |
 | Emerging Markets IMI | 5 % |
+| Einzelaktien | 0 % (zunächst unbestätigt) |
+| Weitere Aktien-ETFs | 0 % (zunächst unbestätigt) |
 | Sicherheit | 50 % |
 
 Die ursprünglichen 35/20/20/15/10 beschreiben den Aktienanteil. Gewichte sind editierbar; vorhandene Nutzereinstellungen bleiben bei Schemaerweiterungen erhalten. Das Modell ist keine Garantie für einen Mehrertrag oder eine Verlustgrenze von 20–30 %. Ein separat vorhandener Notgroschen wird vorausgesetzt.
@@ -63,6 +72,45 @@ Standardregeln:
 - Entscheidung: **HALTEN**, **BEOBACHTEN**, **REBALANCING PRÜFEN**. Unvollständige, widersprüchliche oder veraltete Daten haben Vorrang: **DATEN PRÜFEN**.
 
 `AGENTS.md` hält diese Regeln für spätere Arbeiten mit Codex fest. Neue Mittel werden bevorzugt. Der Sparratenplan berücksichtigt den neuen Gesamtdepotwert, Gebühren je ETF-Kauf und Cent-Rundung. Er erstellt weder Verkaufsorders noch Stückzahlen; Steuern und brokerspezifische Mindestgrößen sind nicht enthalten. Beispiel: EM-Bestand 1.600 EUR bei 50.000 EUR Gesamtwert benötigt für 10 % Zielgewicht rund 3.777,78 EUR neue Mittel ausschließlich in EM, nicht nur die bisherige Ziellücke von 3.400 EUR.
+
+## Einzelaktien und eigene Bausteine
+
+Unter **Strategie & Regeln** sind Einzelaktien (`stocks`) und weitere Aktien-ETFs (`other_equity`) direkt verfügbar. Dazu passen etwa einzelne Unternehmensaktien beziehungsweise ein All-World-, Branchen- oder Länder-Aktien-ETF. Alternativ bis zu 20 eigene Kategorien mit Namen und Anlageart anlegen, beispielsweise „Europa-Aktien“ oder „Anleihen“. Danach stehen sie in der CSV-Vorschau zur Auswahl.
+
+- **Aktienanlage:** zählt vollständig zur Aktienquote, auch bei Einzelaktien und eigenen Aktien-ETF-Kategorien.
+- **Andere Anlage:** zählt nicht zur Aktienquote, z. B. Anleihen oder Gold. Das bedeutet nicht risikolos. Mischfonds mit variablem Aktienanteil werden nicht anteilig durchgerechnet.
+- Bestehende Zielgewichte bleiben erhalten. Neue Kategorien beginnen mit 0 %, und die Bestätigung der Zielaufteilung wird aufgehoben. Erst bewusst Gewichte verteilen, insgesamt 100 % herstellen und die Checkbox zur Verwendung für Vorschläge bestätigen.
+- Ein verwendeter Baustein kann nicht gelöscht oder zwischen Aktien-/anderer Anlage umklassifiziert werden. Das schützt aktuelle, fortgeschriebene und archivierte Bestände. Unbenutzte eigene Kategorien mit 0 % Ziel lassen sich entfernen; die Standardkategorien bleiben erhalten.
+- Für weitere Wertpapiere bleiben Kurssymbol, Börsenplatz, Referenzwährung, Stückzahl und Buchungsdaten ausdrücklich zu prüfen. Der Name allein begründet keine automatische Zuordnung.
+
+## Kauf-/Verkaufsvorschläge und Marktlage
+
+Unter **Sparraten & Risiko** gibt es zwei getrennte Funktionen:
+
+**Vorschläge zur Zielaufteilung:** Neue Einzahlung, geschätzte feste Gebühr je Kauf-/Verkaufszeile und Mindestbetrag eingeben. Standardmäßig werden nur neue Mittel verteilt. Optional „Auch Verkäufe und verfügbares Verrechnungsguthaben einbeziehen“ wählen.
+
+Der Rechner prüft zuerst, ob neue Einzahlungen Übergewichte ausreichend abbauen. Nur verbleibende Übergewichte außerhalb des Zielbands führen bei aktivierter Option zu Verkaufsbeträgen. Erlöse und neues Geld werden auf Untergewichte verteilt. Gebühren, Cent-Rundung und Mindestbeträge werden berücksichtigt; Restabweichungen bleiben sichtbar. Nur ausdrücklich als Verrechnungsguthaben erfasste Beträge können aus dem Sicherheitsanteil eingesetzt werden. Sicherheits-Wertpapiere gelten nicht automatisch als verfügbares Bargeld.
+
+Konkrete Beträge sind bei fehlenden/veralteten/widersprüchlichen Daten oder nicht bestätigten Zielgewichten gesperrt. Insbesondere führt ein neu hinzugefügter 0-%-Baustein vor der Bestätigung nicht automatisch zu einem Verkaufsvorschlag. Die bisherige Sparratenfunktion bleibt ein ausdrücklich gekennzeichnetes Rechenbeispiel bei unvollständigen Daten.
+
+Vorschläge gelten je Baustein. Bei mehreren Wertpapieren innerhalb einer Kategorie wird keines automatisch ausgewählt. Es gibt keine Stückzahlberechnung, Aktienauswahl, Bewertung „günstig/teuer“, Orderausführung oder Bankanbindung. Geschätzte Gebühren unterstellen eine Transaktion pro Kauf-/Verkaufszeile; tatsächliche ING-Kosten, mehrere Orders, Steuern, Spreads, Stückrundung und Verfügbarkeit nach Abwicklung sind vor Umsetzung separat zu prüfen. Der Rechner unterstellt sofort verfügbare Verkaufserlöse. Er verändert weder Bestände noch das Buchungsjournal.
+
+**Marktlage aus Referenzkursen:** Der separate Check beschreibt abgeschlossene bereinigte Tageskurse der bestätigten World-Referenz. Angezeigt werden Quelle, Kursstand, Beobachtungszahl und:
+
+| Kennzahl | Regel / Bedeutung |
+|---|---|
+| Veränderung über 20 Tagesintervalle | Letzter bereinigter Kurs relativ zu 20 Beobachtungen zuvor |
+| Annualisierte Schwankung | Stichprobenstandardabweichung der letzten 20 Tagesrenditen × √252; Prüfgrenze 25 % |
+| Langfristiger Trend | Abstand zum Mittel der letzten 200 Tageswerte; unter dem Mittel entsteht ein Prüfhinweis |
+| Rückgang vom Hoch | Gegenüber dem höchsten bereinigten Kurs der letzten 252 Beobachtungen; Prüfgrenze −15 % |
+
+Mindestens 21 ausreichend dichte Tageswerte sind nötig; 200 bzw. 252 Werte für die längeren Kennzahlen. Feiertagslücken bis zu sieben Kalendertagen sind möglich, eine überwiegend wöchentliche Serie wird abgelehnt. Fehlende Werte bleiben offen. Veraltete oder unbestätigte Referenzdaten führen zu keiner aktuellen Markteinschätzung. 252 Beobachtungen sind eine Handelstage-Näherung, keine exakte Kalenderjahresabgrenzung.
+
+Die Schwellen sind **Heuristiken, keine getestete Timing-Strategie**. Hinweise regen eine Prüfung von Risikobudget und gegebenenfalls Kauftranchen an, verändern aber weder Zielgewichte noch berechnete Handelsbeträge. Ein fallender Referenzmarkt löst allein keinen Verkauf aus. Der World-ETF beschreibt einzelne Unternehmen, Branchen und andere Länder nur eingeschränkt; Nachrichten, Zinsen, Fundamentaldaten und Kursprognosen sind nicht angebunden. Das Fehlen eines Risikohinweises ist keine Kaufempfehlung. Der Marktcheck erscheint auch in Tages-/Wochenberichten.
+
+## Lokal aktualisieren
+
+Server und gegebenenfalls Scheduler beenden. Bei einem Git-Checkout `git pull --ff-only` ausführen; bei ZIP-Nutzung die neue Version entpacken und die Programmdateien aktualisieren. Den privaten Ordner `.data` zuvor sichern und beibehalten, nicht durch Beispieldaten ersetzen. Danach Prozesse neu starten und den Browser neu laden. Die vorhandene Datenbank wird um neue Konfigurationsfelder ergänzt; Bestände, Buchungen und bisherige Zielgewichte bleiben erhalten. Zielgewichte vor Nutzung konkreter Vorschläge ausdrücklich bestätigen.
 
 ## Bestands-CSV
 
@@ -94,7 +142,7 @@ Die fünf gleichnamigen Währungsspalten erhalten intern eindeutige Namen wie `W
 
 - Alternativ `value` statt Stückzahl × Kurs. Ein zugeordneter Gesamtwert hat Vorrang; bei vorhandener Stückzahl wird der passende Preis daraus abgeleitet.
 - `cost_basis` ist optional: gesamter Einstandswert der Position, nicht Stückpreis. Daraus entstehen Buchgewinne; nach Verkäufen wird der Einstandswert nach Durchschnittskosten reduziert. Keine steuerliche FIFO-Berechnung und keine Gesamtrendite seit Kauf inklusive realisierter Gewinne/Ausschüttungen.
-- `bucket`: `world`, `quality`, `momentum`, `small`, `em`, `safe`. Bekannte ISINs werden vorgeschlagen; unbekannte Anlagen erfordern Zuordnung. Keine Live-Verifikation von Fondskosten/Stammdaten.
+- `bucket`: `world`, `quality`, `momentum`, `small`, `em`, `stocks`, `other_equity`, `safe` oder die ID eines angelegten eigenen Bausteins. Bekannte ISINs werden vorgeschlagen; unbekannte Anlagen erfordern Zuordnung. Keine Live-Verifikation von Fondskosten/Stammdaten.
 - Alle Werte in Referenzwährung; keine automatische Devisenumrechnung. Keine Shortpositionen, Kredite, Hebelprodukte oder Anleihenbewertung aus Prozentkursen.
 - Identität ist die ISIN; ohne ISIN eine aus Name und Baustein abgeleitete ID. Doppelte Positionen derselben ISIN vor dem Import zusammenfassen. IDs stehen in der Kurszuordnung.
 - Ein Import ersetzt den Ausgangsbestand der CSV-Positionen, erhält aber das separate Guthaben. Änderungen an Ausgangsbestand oder Kurszuordnung erfordern bei bestehender automatischer Historie einen neuen Bewertungszeitraum. Die bisherige Reihe wird unter „Neuen Bewertungszeitraum starten“ archiviert und bleibt im JSON-Export erhalten.
@@ -154,7 +202,7 @@ date,total_value,equity_value,net_flow,equity_flow,world_index,safety_index
 
 Intervallrendite: `(Endwert − Geldfluss) / vorheriger Endwert − 1`, anschließend geometrische Verkettung. **Alle Geldflüsse gelten als am Intervallende erfolgt.** Bei tatsächlichen Zwischenzuflüssen sind zusätzliche Bewertungen nötig; sonst ist dies eine Näherung an die zeitgewichtete Rendite. Gilt besonders für mehrtägige Lücken. Einzahlungen werden nicht einfach als Gewinn gerechnet.
 
-Die World-Referenz muss eine konsistente Total-Return-Reihe in Referenzwährung sein. Ein bereinigter ETF ist eine Näherung mit eigenen Kosten. Die gemischte Referenz startet mit den aktuellen Zielgewichten und wird danach ohne Rebalancing gehalten. Zieländerungen ändern diese Vergleichslinie rückwirkend. Die automatische Sicherheitsreferenz ist **unverzinst**; eine importierte `safety_index`-Reihe kann eine andere ausdrücklich benannte Sicherheitsreferenz abbilden. Quellen können nicht fachlich authentifiziert werden.
+Die World-Referenz muss eine konsistente Total-Return-Reihe in Referenzwährung sein. Ein bereinigter ETF ist eine Näherung mit eigenen Kosten. Die gemischte Referenz startet mit den aktuellen Zielgewichten und wird danach ohne Rebalancing gehalten. Zieländerungen ändern diese Vergleichslinie rückwirkend. Die automatische Referenz für sämtliche Nicht-Aktien-Bausteine ist **unverzinst**, auch wenn dort beispielsweise Anleihen oder Gold eingeordnet sind; sie bildet deren Marktrisiken nicht nach; eine importierte `safety_index`-Reihe kann eine andere ausdrücklich benannte Sicherheitsreferenz abbilden. Quellen können nicht fachlich authentifiziert werden.
 
 Kennzahlen:
 
@@ -216,9 +264,10 @@ Die Sicherungsdatei darf noch nicht existieren. Zur Wiederherstellung beide Proz
 python -m unittest discover -s tests -v
 node --check static/app.js
 node --check static/expansion.js
+node --check static/decisions.js
 python scripts/browser_smoke.py
 ```
 
-70 Unit-/HTTP-Tests sowie Browserabläufe wurden geprüft, einschließlich ING-Spalten mit mehrfacher Währung und ausdrücklich angegebenem Bewertungsdatum; der optionale Browsercheck benötigt Playwright und Chromium, verwendet eine isolierte Datenbank und synthetische Daten. Node/Playwright sind keine Laufzeitabhängigkeiten. Der Live-Abruf von EUNL.DE wurde am 23.10.2026 erfolgreich geprüft (504 abgeschlossene Tageswerte, EUR, bis 22.10.2026); das bestätigt weder die Zuordnung anderer Fonds noch die zukünftige Verfügbarkeit.
+92 Unit-/HTTP-Tests sowie Browserabläufe wurden geprüft, einschließlich ING-Spalten mit mehrfacher Währung und ausdrücklich angegebenem Bewertungsdatum; der optionale Browsercheck benötigt Playwright und Chromium, verwendet eine isolierte Datenbank und synthetische Daten. Node/Playwright sind keine Laufzeitabhängigkeiten. Der Live-Abruf und der neue Marktlage-Check für EUNL.DE wurden am 23.10.2026 erfolgreich geprüft (252 jüngste Tageswerte für den Marktcheck, EUR, Kursstand 23.10.2026); das bestätigt weder die Zuordnung anderer Fonds noch die zukünftige Verfügbarkeit.
 
 Den vorhandenen Checkout verwenden, keine zusätzlichen Git-Worktrees. Das Projekt-Repository ist `chrisko1989/finance`, Hauptbranch `main`. Private Depotdaten und Laufzeitdateien gehören nicht ins Repository. Cloud-Startanweisungen sichern Start, Datenverzeichnis und Funktionsprüfung. Keine Beispieldaten beim Start ins echte Depot übernehmen.

@@ -11,7 +11,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timezone
 from zoneinfo import ZoneInfo
 
-from .core import ValidationError, iso_date, number, read_csv, weekdays_since
+from .core import ValidationError, iso_date, number, read_csv, weekdays_since, is_equity
 from .ledger import replay, valuation_fingerprint, ledger_fingerprint
 
 
@@ -203,7 +203,7 @@ def revalue(state, *, today=None):
     if benchmark["adjusted_close"] is None:
         raise ValidationError("Für die Referenz fehlen ausschüttungsbereinigte Kurse.")
     total = sum(p["value"] for p in positions)
-    equity = sum(p["value"] for p in positions if p["bucket"] != "safe")
+    equity = sum(p["value"] for p in positions if is_equity(p["bucket"], state["config"]))
     if total <= 0 or equity <= 0:
         raise ValidationError("Für diesen Renditevergleich ist ein positiver Gesamt- und Aktienbestand erforderlich.")
     history = state["automatic_history"]

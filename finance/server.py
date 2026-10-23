@@ -7,14 +7,16 @@ import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit, parse_qs
+from uuid import uuid4
 
-from .core import BUCKETS, ValidationError, demo_state, inspect_csv, iso_date, number, parse_history, parse_holdings, validate_config, validate_holdings
+from .core import ValidationError, bucket_labels, is_equity, demo_state, inspect_csv, iso_date, number, parse_history, parse_holdings, validate_config, validate_holdings
 from .analytics import analyze, contribution_plan, parse_events
 from .ledger import normalize_state, normalize_holdings, parse_transactions, merge_transactions, replay
 from .market import validate_market, parse_quotes, merge_quotes
 from .monitor import run_once, scheduler_status
 from .reporting import report, markdown
 from .storage import ConflictError, Store
+from .recommendations import trade_plan
 
 ROOT = Path(__file__).resolve().parent.parent
 STATIC = ROOT / "static"
@@ -25,12 +27,22 @@ def present(state, directory=None):
     state = normalize_state(state)
     analysis = analyze(state)
     analysis["scheduler"] = scheduler_status(directory) if directory else {"running": False}
-    return {"state": state, "analysis": analysis, "buckets": BUCKETS}
+    return {"state": state, "analysis": analysis, "buckets": bucket_labels(state["config"])}
+
+
+def check_bucket_changes(state, config):
+    used = {h["bucket"] for h in state["holdings"] + state["opening_holdings"]}
+    for archive in state.get("history_archives", []):
+        used.update(h["bucket"] for h in archive.get("opening_holdings", []))
+    if used - set(bucket_labels(config)):
+        raise ValidationError("Ein verwendeter Baustein kann nicht entfernt werden. Bestände und archivierte Ausgangsstände müssen zugeordnet bleiben.")
+    if any(is_equity(key, config) != is_equity(key, state["config"]) for key in used):
+        raise ValidationError("Die Anlageart eines verwendeten Bausteins kann nicht geändert werden; sonst würde die Aktienhistorie falsch eingeordnet.")
 
 
 def make_server(store, port=8000):
     class Handler(BaseHTTPRequestHandler):
-        server_version = "FinanceMonitor/0.2"
+        server_version = "FinanceMonitor/0.3"
 
         def log_message(self, format, *args):
             # Do not put private financial data or request bodies in logs.
@@ -66,7 +78,7 @@ def make_server(store, port=8000):
                 return
             path = urlsplit(self.path).path
             if path == "/api/health":
-                self.respond(200, {"status": "ok", "version": "0.2.0"})
+                self.respond(200, {"status": "ok", "version": "0.3.0"})
             elif path == "/api/state":
                 self.respond(200, present(store.read(), store.directory))
             elif path == "/api/demo":
@@ -80,9 +92,9 @@ def make_server(store, port=8000):
                     return
                 result = report(store.read(), mode=mode)
                 self.respond(200, {"report": result, "markdown": markdown(result)})
-            elif path in {"/", "/app.js", "/expansion.js", "/style.css"}:
-                filename = {"/": "index.html", "/app.js": "app.js", "/expansion.js": "expansion.js", "/style.css": "style.css"}[path]
-                content_type = {"/": "text/html; charset=utf-8", "/app.js": "text/javascript; charset=utf-8", "/expansion.js": "text/javascript; charset=utf-8", "/style.css": "text/css; charset=utf-8"}[path]
+            elif path in {"/", "/app.js", "/expansion.js", "/decisions.js", "/style.css"}:
+                filename = {"/": "index.html", "/app.js": "app.js", "/expansion.js": "expansion.js", "/decisions.js": "decisions.js", "/style.css": "style.css"}[path]
+                content_type = {"/": "text/html; charset=utf-8", "/app.js": "text/javascript; charset=utf-8", "/expansion.js": "text/javascript; charset=utf-8", "/decisions.js": "text/javascript; charset=utf-8", "/style.css": "text/css; charset=utf-8"}[path]
                 self.respond(200, (STATIC / filename).read_bytes(), content_type)
             elif path in {"/examples/holdings.csv", "/examples/history.csv", "/examples/ing-style.csv", "/examples/transactions.csv", "/examples/quotes.csv", "/examples/events.csv"}:
                 self.respond(200, (ROOT / path.lstrip("/")).read_bytes(), "text/csv; charset=utf-8")
@@ -117,6 +129,9 @@ def make_server(store, port=8000):
                     return
                 if path == "/api/contributions":
                     self.respond(200, contribution_plan(store.read(), data.get("amount"), data.get("fee", 0)))
+                    return
+                if path == "/api/recommendations":
+                    self.respond(200, trade_plan(store.read(), data.get("amount", 0), data.get("fee", 0), data.get("minimum", 25), data.get("allow_sales", False)))
                     return
                 if path == "/api/monitor":
                     if data.get("revision") != store.read()["revision"]:
@@ -167,9 +182,29 @@ def make_server(store, port=8000):
                         analyze(state)  # Reject non-finite chained returns before committing.
                     elif path == "/api/config":
                         config = validate_config(data.get("config"))
+                        check_bucket_changes(state, config)
                         if config["currency"] != state["config"]["currency"] and any(state[k] for k in ["holdings", "history", "automatic_history", "quotes", "transactions"]):
                             raise ValidationError("Referenzwährung kann bei bestehenden Daten nicht geändert werden. Es findet keine automatische Devisenumrechnung statt.")
                         state["config"] = config
+                    elif path == "/api/buckets":
+                        config = copy.deepcopy(state["config"])
+                        key = "custom_" + uuid4().hex[:12]
+                        config["custom_buckets"][key] = {"label": data.get("label", ""), "asset_class": data.get("asset_class", "")}
+                        config["targets"][key] = 0
+                        config["targets_confirmed"] = False
+                        state["config"] = validate_config(config)
+                    elif path == "/api/buckets/remove":
+                        key = data.get("key")
+                        config = copy.deepcopy(state["config"])
+                        if not isinstance(key, str) or key not in config["custom_buckets"]:
+                            raise ValidationError("Nur eigene Bausteine können entfernt werden.")
+                        if config["targets"][key] != 0:
+                            raise ValidationError("Vor dem Entfernen das Zielgewicht auf 0 setzen und die übrigen Gewichte anpassen.")
+                        del config["custom_buckets"][key]
+                        del config["targets"][key]
+                        config["targets_confirmed"] = False
+                        check_bucket_changes(state, config)
+                        state["config"] = validate_config(config)
                     elif path == "/api/market":
                         state["market"] = validate_market(data.get("market"), state)
                     elif path == "/api/quotes":

@@ -38,14 +38,19 @@ def markdown(data):
     perf=data["performance"]
     lines += ["",f"Maximaler Rückgang: {fmt(perf['max_drawdown'] if perf else None,' %')}; annualisierte Volatilität: {fmt(data['volatility_annualized'],' %')}.","","## Prüfhinweise",""]
     lines += [f"- {a['title']}: {a['detail']}" for a in data["alerts"]] or ["Keine Prüfgrenze überschritten."]
+    context=data["market_context"]
+    lines += ["","## Marktlage aus Kursdaten","",f"{context['label']}: {context['reason']}",f"Referenz: {context['benchmark']}; Kursstand: {context['as_of'] or 'fehlt'}; Tageswerte: {context['observations']}."]
+    for key,label in [("return20_pct","20-Tages-Veränderung"),("volatility20_pct","Annualisierte 20-Tages-Schwankung"),("sma200_gap_pct","Abstand zum 200-Tage-Durchschnitt"),("drawdown252_pct","Rückgang vom Hoch der letzten 252 Tageswerte")]:
+        lines.append(f"- {label}: {fmt(context['metrics'].get(key),' %')}")
+    lines += ["Prüfschwellen: Kurs unter 200-Tage-Mittel, annualisierte Schwankung ab 25 %, Rückgang vom 252-Tage-Hoch ab 15 %. Heuristiken, keine getestete Timing-Strategie. Zielgewichte werden dadurch nicht geändert.","Kauf-/Verkaufsvorschläge können mit Einzahlung, Gebührenannahme und Mindestbetrag unter Sparraten & Risiko berechnet werden. Fehlende Daten oder unbestätigte Ziele sperren konkrete Handelsbeträge."]
     if data["mode"]=="weekly":
         lines += ["","## Allokation","","| Baustein | Ist | Ziel | Differenz zum Zielbetrag |","|---|---:|---:|---:|"]
         for row in data["allocations"]:
             lines.append(f"| {row['label']} | {fmt(row['actual_pct'],' %')} | {fmt(row['target_pct'],' %')} | {fmt(row['target_gap'])} {data['currency']} |")
-        lines += ["","Zielbetragsdifferenzen gelten bei unverändertem Depotwert. Frische Einzahlungen verändern den Nenner; dafür den Sparratenplan verwenden.","","## Fondsvergleich",""]
+        lines += ["","Zielbetragsdifferenzen gelten bei unverändertem Depotwert. Frische Einzahlungen verändern den Nenner; dafür den Sparratenplan verwenden.","","## Wertpapiervergleich",""]
         for row in data["fund_comparisons"]:
             label=row["label"].replace("\n"," ")
-            lines.append(f"- {label}: {fmt(row['return_pct'],' %')}, Referenz {fmt(row['benchmark_pct'],' %')}; {row['start']} bis {row['end']}. Fondskursvergleich, keine persönliche Depotrendite.")
+            lines.append(f"- {label}: {fmt(row['return_pct'],' %')}, Referenz {fmt(row['benchmark_pct'],' %')}; {row['start']} bis {row['end']}. Kursvergleich, keine persönliche Depotrendite.")
         if not data["fund_comparisons"]:
             lines.append("Keine ausreichenden gemeinsamen bereinigten Kursreihen vorhanden.")
         lines += ["","## Ereignisse und Marktumfeld",""]

@@ -1,6 +1,6 @@
 [project]
 name = "finance-monitor"
-version = "0.2.0"
+version = "0.3.0"
 description = "Lokaler ETF-Portfoliomonitor mit CSV-Import und nachvollziehbaren Kennzahlen"
 requires-python = ">=3.11"
 dependencies = []

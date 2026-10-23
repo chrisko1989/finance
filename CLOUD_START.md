@@ -1,4 +1,4 @@
-# Depotblick 0.2: Start and validate
+# Depotblick 0.3: Start and validate
 
 Use the existing checkout at /workspace/finance. Read AGENTS.md and README.md. Each cloud task is isolated; do not create a Git worktree unless explicitly requested. Preserve user files, settings and portfolio data.
 
@@ -33,7 +33,7 @@ for path in ['health', 'state', 'demo', 'report?mode=weekly']:
     with urllib.request.urlopen('http://127.0.0.1:8000/api/' + path, timeout=5) as response:
         data = json.load(response)
     if path == 'health':
-        assert data['status'] == 'ok' and data['version'] == '0.2.0'
+        assert data['status'] == 'ok' and data['version'] == '0.3.0'
     elif path == 'state':
         assert data['state']['demo'] is False
         assert isinstance(data['analysis']['alerts'], list)
@@ -55,10 +55,11 @@ Do not print holdings or account information merely for readiness. The real depo
 python -m unittest discover -s tests -v
 node --check static/app.js
 node --check static/expansion.js
+node --check static/decisions.js
 python scripts/browser_smoke.py
 ```
 
-70 unit/HTTP tests and isolated browser workflows passed, including the supplied ING header layout with repeated currency columns and an explicit valuation date. Playwright and Chromium are available on the prepared cloud machine, but are not app runtime dependencies. Browser checks use a temporary database and cover demo isolation, responsive layout, ING-style import, quantities, cash, settings, separate histories, contributions, quotes, transactions, reports, events, persistence, export, CSP and JS errors.
+92 unit/HTTP tests and isolated browser workflows passed, including the supplied ING header layout with repeated currency columns and an explicit valuation date. Playwright and Chromium are available on the prepared cloud machine, but are not app runtime dependencies. Browser checks use a temporary database and cover demo isolation, responsive layout, ING-style import, quantities, cash, settings, separate histories, contributions, quotes, transactions, reports, events, persistence, export, CSP and JS errors.
 
 ## Quotes, reports and financial assumptions
 The user chose a free quote source, ING/EUR and dashboard-only notices. The custom network allowlist includes query1.finance.yahoo.com. Yahoo's public HTTPS endpoint needs no key. Only configured ticker symbols leave the application. On 2026-10-23 a live EUNL.DE fetch and isolated monitor run passed: 504 completed EUR daily observations through 2026-10-22 with adjusted closes. This does not verify other ETF mappings or guarantee availability. Avoid repetitive live calls during routine tests.
@@ -77,3 +78,10 @@ python -m finance.monitor --update
 The first checks stored data and saves local JSON/Markdown reports. The second additionally updates and values configured positions. Exit 0: no notices; 2: data/strategy notices; 1: update/technical failure. Missing initial holdings are expected data notices, not completed portfolio monitoring. The legacy finance.report JSON CLI remains supported.
 
 The user-supplied ING header layout is supported and tested with synthetic rows (examples/ing-holdings.csv); a complete authentic export has not been tested. The five currency columns retain their association with cost, quote and market value. Zeit is not automatically treated as a valuation date. Full purchase-to-date total return/XIRR, holdings look-through, automatic news/macro analysis and fund metadata monitoring remain outside this version. Manually sourced events must be labelled as such; never infer market causes or promise the portfolio beats MSCI World.
+
+## Custom allocations, proposals and market context (0.3)
+The built-in stocks and other_equity buckets start with 0% targets; older allocation weights remain unchanged. Up to 20 custom buckets carry an explicit equity/non_equity class. Count only equity classes toward equity values, targets and ledger flows. Used or archived categories cannot be removed or reclassified. Mixed funds with variable equity shares are not decomposed. The non-equity part of the automatic reference remains unremunerated; it is not a model of bond or gold risks.
+
+Before concrete trade proposals, targets_confirmed must be explicitly true and data checks must pass. Adding a category clears confirmation. New contributions are considered first. Sales and use of existing transaction cash require the planner option, default off. Suggestions are amounts per bucket, with estimated fees, minimum sizes and residual deviations; no stock selection, quantities, taxes, spreads or orders. Planning is read-only.
+
+The market check uses adjusted daily benchmark prices: 20-return volatility, SMA200 distance and 252-observation drawdown. Thresholds (25% volatility, below SMA200, -15% drawdown) are descriptive heuristics, not a validated timing strategy. Market stress alone never creates a sale or changes targets. Missing/stale prices must remain unavailable. No news, company valuations or fundamental data. A live EUNL.DE market check passed on 2026-10-23 with 252 observations through 2026-10-23; no personal holdings were used or saved.
