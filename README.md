@@ -2,6 +2,19 @@
 
 Lokaler Portfoliomonitor für das besprochene ETF-Musterportfolio: ING-orientierter CSV-Import, kostenlose Tageskurse, Buchungen, nachvollziehbare Renditeberechnung, Sparratenplan und Hinweise ausschließlich im Dashboard. Python ≥3.11, Standardbibliothek, keine Zugangsdaten oder externen Laufzeitpakete. Die Anwendung führt keine Orders aus.
 
+## Vorschau
+
+Die folgenden Screenshots zeigen ausschließlich fiktive Demodaten. Sie sind direkt im Repository gespeichert und auf GitHub sichtbar. Die Anwendung selbst ist damit noch nicht öffentlich gehostet.
+
+![Depotblick: Portfolioübersicht mit fiktiven Demodaten](docs/screenshots/demo-desktop.png)
+
+<details>
+<summary>Mobilansicht anzeigen</summary>
+
+<img src="docs/screenshots/demo-mobile.png" alt="Depotblick auf dem Smartphone mit fiktiven Demodaten" width="390">
+
+</details>
+
 ## Starten
 
 Aus dem Projektverzeichnis in zwei Terminals:
