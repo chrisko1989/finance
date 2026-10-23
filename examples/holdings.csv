@@ -1,0 +1,7 @@
+name,isin,bucket,quantity,price,currency,as_of
+MSCI World Beispiel,,world,175,100,EUR,2026-10-22
+World Quality Beispiel,IE00BP3QZ601,quality,100,100,EUR,2026-10-22
+World Momentum Beispiel,IE00BP3QZ825,momentum,100,100,EUR,2026-10-22
+World Small Caps Beispiel,IE00BCBJG560,small,75,100,EUR,2026-10-22
+EM IMI Beispiel,IE00BKM4GZ66,em,50,100,EUR,2026-10-22
+Tagesgeld Beispiel,,safe,50000,1,EUR,2026-10-22

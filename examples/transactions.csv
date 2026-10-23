@@ -1,0 +1,3 @@
+id,date,type,instrument_id,quantity,price,amount,fee,currency
+demo-deposit,2026-10-23,DEPOSIT,,0,0,1000,0,EUR
+demo-buy-quality,2026-10-23,BUY,IE00BP3QZ601,5,100,500,1,EUR

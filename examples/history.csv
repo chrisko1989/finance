@@ -1,0 +1,4 @@
+date,total_value,equity_value,net_flow,equity_flow,world_index,safety_index
+2026-08-31,100000,50000,0,0,100,100
+2026-09-30,103000,52500,1000,1000,102,100.2
+2026-10-22,104000,53000,0,0,103,100.3
