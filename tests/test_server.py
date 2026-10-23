@@ -73,6 +73,22 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(len(saved["state"]["holdings"]), 2)
         self.assertEqual(saved["analysis"]["total"], 2000)
 
+    def test_ing_duplicate_currency_header_preview_and_commit(self):
+        csv = (Path(__file__).resolve().parent.parent / "examples/ing-holdings.csv").read_text()
+        status, inspection = self.request("/api/inspect", {"csv": csv})
+        self.assertEqual(status, 200)
+        self.assertEqual(inspection["mapping"]["currency"], "Währung (Kurswert)")
+        request = {"csv": csv, "mapping": inspection["mapping"], "german": True}
+        self.assertEqual(self.request("/api/preview", request)[0], 400)
+        status, preview = self.request("/api/preview", {**request, "valuation_date": "2024-01-02"})
+        self.assertEqual(status, 200)
+        self.assertEqual(self.store.read()["revision"], 0)
+        status, saved = self.request("/api/holdings", {"holdings": preview["holdings"], "revision": 0})
+        self.assertEqual(status, 200)
+        self.assertEqual(saved["analysis"]["total"], 20000)
+        self.assertEqual(saved["state"]["holdings"][0]["cost_basis"], 9000)
+        self.assertEqual(saved["state"]["holdings"][0]["quantity"], 100)
+
     def test_invalid_import_leaves_prior_data_intact(self):
         row = self.holding()
         row["bucket"] = ""

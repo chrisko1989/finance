@@ -92,7 +92,19 @@ def validate_config(data):
     return config
 
 
-def read_csv(text):
+ING_HOLDINGS_FIELDS = [
+    "ISIN", "Wertpapiername", "Stück/Nominale", "Einheitskennzeichen",
+    "Einstandskurs", "Währung", "Einstandswert", "Währung",
+    "Bewertungskurs", "Währung", "Zeit", "Handelsplatz", "Kurswert", "Währung",
+    "Gewinn/Verlust", "Währung", "Gewinn/Verlust (%)",
+]
+ING_UNIQUE_FIELDS = [
+    f"Währung ({ING_HOLDINGS_FIELDS[i-1]})" if name == "Währung" else name
+    for i, name in enumerate(ING_HOLDINGS_FIELDS)
+]
+
+
+def read_csv(text, *, ing_holdings=False):
     if not isinstance(text, str) or not text.strip():
         raise ValidationError("Die CSV-Datei ist leer.")
     if len(text) > 2_000_000:
@@ -111,6 +123,9 @@ def read_csv(text):
     try:
         reader = csv.DictReader(io.StringIO(text), delimiter=delimiter)
         fields = [str(h).strip() for h in (reader.fieldnames or [])]
+        if ing_holdings and [h.casefold() for h in fields] == [h.casefold() for h in ING_HOLDINGS_FIELDS]:
+            # Rename before DictReader reads a row: duplicate keys would discard currencies.
+            fields = ING_UNIQUE_FIELDS.copy()
         if not fields or any(not h for h in fields) or len(set(fields)) != len(fields):
             raise ValidationError("Die erste CSV-Zeile muss eindeutige, nicht leere Spaltennamen enthalten.")
         reader.fieldnames = fields
@@ -130,12 +145,12 @@ def read_csv(text):
 
 
 ALIASES = {
-    "name": ["name", "wertpapierbezeichnung", "bezeichnung", "wertpapier", "name / isin"],
+    "name": ["name", "wertpapierbezeichnung", "wertpapiername", "bezeichnung", "wertpapier", "name / isin"],
     "isin": ["isin"],
     "quantity": ["quantity", "stück/nominale", "stück / nominale", "stück", "anzahl", "bestand", "nominale"],
-    "price": ["price", "kurs", "kurs aktuell", "aktueller kurs"],
+    "price": ["price", "kurs", "bewertungskurs", "kurs aktuell", "aktueller kurs"],
     "value": ["value", "kurswert", "wert", "gesamtwert", "kurswert in eur"],
-    "currency": ["currency", "währung", "währung kurswert", "kurswährung"],
+    "currency": ["currency", "währung", "währung kurswert", "währung (kurswert)", "kurswährung"],
     "as_of": ["as_of", "kursdatum", "datum", "stand"],
     "bucket": ["bucket", "baustein"],
     "cost_basis": ["cost_basis", "einstandswert", "kaufwert", "einstandswert in eur"],
@@ -143,15 +158,22 @@ ALIASES = {
 
 
 def inspect_csv(text):
-    fields, rows = read_csv(text)
+    fields, rows = read_csv(text, ing_holdings=True)
     mapping = {}
     for field, aliases in ALIASES.items():
         mapping[field] = next((h for h in fields if h.casefold() in aliases), "")
-    return {"fields": fields, "mapping": mapping, "sample": rows[:5], "row_count": len(rows)}
+    notices = []
+    if fields == ING_UNIQUE_FIELDS:
+        notices = [
+            "ING-Spaltenformat erkannt. Die fünf Währungsspalten werden nach ihrem zugehörigen Wert benannt; für den Gesamtwert gilt Währung (Kurswert).",
+            "Zeit wird nicht automatisch als Bewertungsdatum verwendet. Bitte das Datum des Bestandsstands unten ausdrücklich angeben und die Kursstände prüfen.",
+            "Einstandswert ist der gesamte Einstandsbetrag. Gewinn/Verlust-Spalten werden nicht als Depot-Renditehistorie importiert.",
+        ]
+    return {"fields": fields, "mapping": mapping, "sample": rows[:5], "row_count": len(rows), "notices": notices}
 
 
 def parse_holdings(text, mapping, config, *, german=False, valuation_date=None):
-    fields, rows = read_csv(text)
+    fields, rows = read_csv(text, ing_holdings=True)
     if not isinstance(mapping, dict):
         raise ValidationError("Spaltenzuordnung fehlt.")
     if any(v and v not in fields for v in mapping.values()):
@@ -168,6 +190,17 @@ def parse_holdings(text, mapping, config, *, german=False, valuation_date=None):
         if not name or len(name) > 200:
             raise ValidationError(f"Zeile {i}: Name fehlt oder ist zu lang.")
         currency = get("currency", config["currency"]).upper()
+        if fields == ING_UNIQUE_FIELDS:
+            used_fields = ["value"] if mapping.get("value") else ["price"]
+            if mapping.get("cost_basis") and get("cost_basis"):
+                used_fields.append("cost_basis")
+            for field in used_fields:
+                column = mapping.get(field, "")
+                currency_column = f"Währung ({column})"
+                if currency_column in row and row[currency_column].upper() != config["currency"]:
+                    raise ValidationError(f"Zeile {i}: {currency_column} muss {config['currency']} sein. Keine automatische Devisenumrechnung; optionalen Einstandswert gegebenenfalls nicht zuordnen.")
+            if mapping.get("quantity") and row["Einheitskennzeichen"].upper() not in {"ST", "ST.", "STK", "STK.", "STÜCK", "STUECK", "STÜCKE"}:
+                raise ValidationError(f"Zeile {i}: Einheitskennzeichen kennzeichnet keinen unterstützten Stückbestand. Nominalbestände nur mit Gesamtwert und ohne Stückzahl zuordnen.")
         if currency != config["currency"]:
             raise ValidationError(f"Zeile {i}: {currency} kann nicht mit {config['currency']} summiert werden. Kurswert zuerst in Referenzwährung umrechnen; keine automatische Devisenumrechnung.")
         isin = get("isin").upper()
@@ -186,7 +219,7 @@ def parse_holdings(text, mapping, config, *, german=False, valuation_date=None):
         quantity = number(get("quantity"), f"Zeile {i}, Stückzahl", german=german) if mapping.get("quantity") else None
         if quantity is not None and (quantity < 0 or (quantity == 0 and value > 0)):
             raise ValidationError(f"Zeile {i}: Stückzahl passt nicht zum Bestandswert.")
-        cost = number(get("cost_basis"), f"Zeile {i}, Einstandswert", german=german) if mapping.get("cost_basis") else None
+        cost = number(get("cost_basis"), f"Zeile {i}, Einstandswert", german=german) if mapping.get("cost_basis") and get("cost_basis") else None
         if cost is not None and cost < 0:
             raise ValidationError("Einstandswert darf nicht negativ sein.")
         result.append({"name": name, "isin": isin, "bucket": bucket if bucket in BUCKETS else "", "value": value, "currency": currency, "as_of": as_of, "source": "csv", "quantity": quantity, "price": value / quantity if quantity else None, "cost_basis": cost})

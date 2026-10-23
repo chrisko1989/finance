@@ -256,7 +256,7 @@ $("#holdings-file").addEventListener("change",()=>run(null,async()=>{
   const canonical=inspection.fields.includes("as_of") && inspection.fields.includes("name");
   $("#number-format").value=canonical?"decimal":"german";
   $("#valuation-date").value="";
-  $("#import-summary").textContent=`${inspection.row_count} Datenzeilen erkannt. Bei ING-Varianten die Spaltenzuordnung und das Zahlenformat kontrollieren.`;
+  $("#import-summary").textContent=`${inspection.row_count} Datenzeilen erkannt. ${(inspection.notices || []).join(" ") || "Bei ING-Varianten die Spaltenzuordnung und das Zahlenformat kontrollieren."}`;
   $("#mapping-panel").hidden=false;
 },true));
 for(const id of ["#number-format","#valuation-date"])$(id).addEventListener("change",()=>{$("#preview-panel").hidden=true;preview=[];});

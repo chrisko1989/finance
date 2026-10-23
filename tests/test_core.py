@@ -1,8 +1,11 @@
 import copy
+import csv
+import io
 import unittest
 from datetime import date
+from pathlib import Path
 
-from finance.core import DEFAULT_CONFIG, ValidationError, analyze, demo_state, inspect_csv, number, parse_history, parse_holdings, performance, validate_config, weekdays_since
+from finance.core import DEFAULT_CONFIG, ValidationError, analyze, demo_state, inspect_csv, number, parse_history, parse_holdings, performance, read_csv, validate_config, weekdays_since
 
 
 HEADER = "date,total_value,equity_value,net_flow,equity_flow,world_index,safety_index\n"
@@ -105,6 +108,77 @@ class ImportTests(unittest.TestCase):
         text = "name,value,isin,as_of\nUnknown,100,XX0000000000,2024-01-01"
         result = parse_holdings(text, inspect_csv(text)["mapping"], DEFAULT_CONFIG)
         self.assertEqual(result[0]["bucket"], "")
+
+
+class IngHoldingsTests(unittest.TestCase):
+    def setUp(self):
+        self.text = (Path(__file__).resolve().parent.parent / "examples/ing-holdings.csv").read_text()
+
+    def changed(self, updates):
+        rows = list(csv.reader(io.StringIO(self.text), delimiter=";"))
+        for index, value in updates.items():
+            rows[1][index] = value
+        output = io.StringIO()
+        csv.writer(output, delimiter=";", quoting=csv.QUOTE_ALL).writerows(rows)
+        return "\ufeffsep=;\n" + output.getvalue()
+
+    def parse(self, text=None, **mapping_changes):
+        text = self.text if text is None else text
+        mapping = {**inspect_csv(text)["mapping"], **mapping_changes}
+        return parse_holdings(text, mapping, DEFAULT_CONFIG, german=True, valuation_date="2024-01-02")
+
+    def test_ing_header_mapping_and_explicit_date(self):
+        inspection = inspect_csv(self.text)
+        self.assertEqual(len(set(inspection["fields"])), 17)
+        for key, column in {"name": "Wertpapiername", "quantity": "Stück/Nominale", "price": "Bewertungskurs", "value": "Kurswert", "currency": "Währung (Kurswert)", "cost_basis": "Einstandswert", "as_of": ""}.items():
+            self.assertEqual(inspection["mapping"][key], column)
+        self.assertTrue(any("Zeit" in notice for notice in inspection["notices"]))
+        with self.assertRaisesRegex(ValidationError, "Datum"):
+            parse_holdings(self.text, inspection["mapping"], DEFAULT_CONFIG, german=True)
+        row = self.parse()[0]
+        self.assertEqual((row["quantity"], row["price"], row["value"], row["cost_basis"]), (100, 100, 10000, 9000))
+        self.assertEqual(row["as_of"], "2024-01-02")
+
+    def test_five_currencies_are_retained_and_market_value_has_priority(self):
+        text = self.changed({5: "CHF", 9: "USD", 15: "GBP"})
+        sample = inspect_csv(text)["sample"][0]
+        self.assertEqual([sample[f"Währung ({name})"] for name in ["Einstandskurs", "Einstandswert", "Bewertungskurs", "Kurswert", "Gewinn/Verlust"]], ["CHF", "EUR", "USD", "EUR", "GBP"])
+        row = self.parse(text)[0]
+        self.assertEqual(row["currency"], "EUR")
+        self.assertEqual(row["value"], 10000)
+        self.assertEqual(row["cost_basis"], 9000)
+
+    def test_wrong_or_missing_value_currency_cannot_be_hidden_by_mapping(self):
+        for value in ["USD", ""]:
+            with self.subTest(currency=value), self.assertRaisesRegex(ValidationError, "Kurswert"):
+                self.parse(self.changed({13: value}), currency="Währung (Einstandskurs)")
+
+    def test_cost_currency_is_checked_and_cost_can_be_omitted(self):
+        text = self.changed({7: "USD"})
+        with self.assertRaisesRegex(ValidationError, "Einstandswert"):
+            self.parse(text)
+        self.assertIsNone(self.parse(text, cost_basis="")[0]["cost_basis"])
+        self.assertIsNone(self.parse(self.changed({6: "", 7: ""}))[0]["cost_basis"])
+
+    def test_quote_currency_checked_when_value_is_not_used(self):
+        text = self.changed({9: "USD"})
+        with self.assertRaisesRegex(ValidationError, "Bewertungskurs"):
+            self.parse(text, value="")
+
+    def test_nominal_is_not_treated_as_share_quantity(self):
+        text = self.changed({3: "EUR"})
+        with self.assertRaisesRegex(ValidationError, "Nominalbestände"):
+            self.parse(text)
+        row = self.parse(text, quantity="")[0]
+        self.assertIsNone(row["quantity"])
+        self.assertIsNone(row["price"])
+        self.assertEqual(row["value"], 10000)
+
+    def test_duplicate_support_is_limited_to_known_holdings_layout(self):
+        with self.assertRaisesRegex(ValidationError, "eindeutige"):
+            read_csv(self.text)
+        with self.assertRaisesRegex(ValidationError, "eindeutige"):
+            inspect_csv(self.text.replace("Handelsplatz", "Andere Spalte"))
 
 
 class AlertTests(unittest.TestCase):

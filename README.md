@@ -33,7 +33,7 @@ Neue Datenbestände sind leer. Die Demo lädt fiktive Daten nur in die Ansicht; 
 
 ## Einstieg mit deinem ING-Depot
 
-1. **Daten importieren:** Bestands-CSV auswählen, Spalten und Zahlenformat prüfen, unbekannte Wertpapiere zuordnen, Vorschau bestätigen. Für automatische Bewertungen werden Stückzahlen benötigt; ein reiner Gesamtwert reicht nur für die manuelle Übersicht. Ein echter ING-Export wurde noch nicht bereitgestellt: getestet wurde ein synthetisches ING-ähnliches Format.
+1. **Daten importieren:** Bestands-CSV auswählen, Spalten und Zahlenformat prüfen, unbekannte Wertpapiere zuordnen, Vorschau bestätigen. Für automatische Bewertungen werden Stückzahlen benötigt; ein reiner Gesamtwert reicht nur für die manuelle Übersicht. Die bereitgestellte ING-Spaltenstruktur mit fünf Währungsspalten wird unterstützt und mit fiktiven Daten getestet. Eine vollständige echte ING-Datei wurde noch nicht geprüft.
 2. **Positionen:** Verrechnungsguthaben ergänzen. Alle Ausgangsbestände einschließlich Guthaben brauchen für die automatische Fortschreibung dasselbe Datum. Keine Beträge doppelt erfassen. Das separate Guthaben ist das Konto, aus dem die Buchungen bezahlt werden. Nicht verfügbares Tages-/Festgeld gegebenenfalls als weitere `safe`-Position importieren.
 3. **Kurse & Berichte:** Yahoo auswählen, ISINs den tatsächlich passenden Kurssymbolen einschließlich Börsenplatz zuordnen, EUR-Notierung und eine bereinigte World-Referenz prüfen und bestätigen. `EUNL.DE` ist ein mögliches ETF-Referenzsymbol, keine direkte MSCI-Indexreihe. Ein Symbol wird nicht aus einem Fondsnamen erraten.
 4. **Kurse abrufen & bewerten:** Erst ein vollständig passender gemeinsamer Kursstand aktualisiert das Depot. Der automatische Renditeverlauf beginnt mit dieser ersten Bewertung; mindestens zwei Bewertungstage sind für Renditen erforderlich. Die abrufbaren zwei Jahre Fondskurse sind keine rekonstruierte persönliche Depothistorie.
@@ -72,6 +72,25 @@ Quality,IE00BP3QZ601,quality,10,100,900,EUR,2026-10-22
 ```
 
 Spaltenzuordnung unterstützt auch ING-ähnliche Überschriften, Semikolon, Dezimalkomma, Tausenderpunkte, UTF-8/Windows-1252 und `sep=;`. Metadaten- und Summenzeilen vorher entfernen. `examples/ing-style.csv` ist kein bestätigter Originalexport.
+
+Für die ING-Kopfzeile mit `ISIN;Wertpapiername;Stück/Nominale;Einheitskennzeichen;Einstandskurs;Währung;Einstandswert;Währung;Bewertungskurs;Währung;Zeit;Handelsplatz;Kurswert;Währung;Gewinn/Verlust;Währung;Gewinn/Verlust (%)` gilt diese automatische Zuordnung:
+
+| Zielfeld | ING-Spalte |
+|---|---|
+| Bezeichnung | Wertpapiername |
+| ISIN | ISIN |
+| Stückzahl | Stück/Nominale |
+| Kurs | Bewertungskurs |
+| Gesamtwert | Kurswert |
+| Währung des Werts | Währung direkt nach Kurswert |
+| Einstandswert | Einstandswert, nicht Einstandskurs |
+| Bewertungsdatum | Manuell angeben; Zeit bleibt unzugeordnet |
+
+Die fünf gleichnamigen Währungsspalten erhalten intern eindeutige Namen wie `Währung (Kurswert)`. Die Originaldatei muss dafür nicht umbenannt werden. Diese Ausnahme gilt nur für die erkannte vollständige ING-Spaltenfolge; andere doppelte Überschriften bleiben ein Fehler. Eine vollständig quotierte Kopfzeile wird ebenfalls unterstützt.
+
+`Einheitskennzeichen` muss bei einer übernommenen Stückzahl eine unterstützte Stückeinheit enthalten (z. B. STK oder Stück). Nominalpositionen können wertbasiert ohne Stückzahl importiert werden; sie sind damit nicht für eine automatische Stückzahlbewertung geeignet. Kurswert und übernommener Einstandswert müssen jeweils in Referenzwährung vorliegen. Ein abweichender Bewertungskurs in Fremdwährung wird nicht für die Berechnung verwendet, wenn der Kurswert bereits in Referenzwährung angegeben ist. Leere Einstandswerte bleiben unbekannt; bei einer abweichenden Einstandswährung die optionale Zuordnung entfernen oder zuvor nachvollziehbar umrechnen. Die Gewinn/Verlust-Spalten sind keine Renditehistorie.
+
+`examples/ing-holdings.csv` verwendet diese Kopfzeile mit ausschließlich fiktiven Positionen, Zahlen, Einheiten und Uhrzeiten. Das tatsächliche Format der Datenzeilen muss in der Vorschau geprüft werden. Bei `Zeit` darf eine Uhrzeit nicht als Kalenderdatum interpretiert werden; das Datum des Bestandsstands ausdrücklich angeben und veraltete Kursstände gesondert prüfen.
 
 - Alternativ `value` statt Stückzahl × Kurs. Ein zugeordneter Gesamtwert hat Vorrang; bei vorhandener Stückzahl wird der passende Preis daraus abgeleitet.
 - `cost_basis` ist optional: gesamter Einstandswert der Position, nicht Stückpreis. Daraus entstehen Buchgewinne; nach Verkäufen wird der Einstandswert nach Durchschnittskosten reduziert. Keine steuerliche FIFO-Berechnung und keine Gesamtrendite seit Kauf inklusive realisierter Gewinne/Ausschüttungen.
@@ -200,6 +219,6 @@ node --check static/expansion.js
 python scripts/browser_smoke.py
 ```
 
-62 Unit-/HTTP-Tests sowie Browserabläufe wurden geprüft; der optionale Browsercheck benötigt Playwright und Chromium, verwendet eine isolierte Datenbank und synthetische Daten. Node/Playwright sind keine Laufzeitabhängigkeiten. Der Live-Abruf von EUNL.DE wurde am 23.10.2026 erfolgreich geprüft (504 abgeschlossene Tageswerte, EUR, bis 22.10.2026); das bestätigt weder die Zuordnung anderer Fonds noch die zukünftige Verfügbarkeit.
+70 Unit-/HTTP-Tests sowie Browserabläufe wurden geprüft, einschließlich ING-Spalten mit mehrfacher Währung und ausdrücklich angegebenem Bewertungsdatum; der optionale Browsercheck benötigt Playwright und Chromium, verwendet eine isolierte Datenbank und synthetische Daten. Node/Playwright sind keine Laufzeitabhängigkeiten. Der Live-Abruf von EUNL.DE wurde am 23.10.2026 erfolgreich geprüft (504 abgeschlossene Tageswerte, EUR, bis 22.10.2026); das bestätigt weder die Zuordnung anderer Fonds noch die zukünftige Verfügbarkeit.
 
 Den vorhandenen Checkout verwenden, keine zusätzlichen Git-Worktrees. Das Projekt-Repository ist `chrisko1989/finance`, Hauptbranch `main`. Private Depotdaten und Laufzeitdateien gehören nicht ins Repository. Cloud-Startanweisungen sichern Start, Datenverzeichnis und Funktionsprüfung. Keine Beispieldaten beim Start ins echte Depot übernehmen.

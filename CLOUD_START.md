@@ -58,7 +58,7 @@ node --check static/expansion.js
 python scripts/browser_smoke.py
 ```
 
-62 unit/HTTP tests and isolated browser workflows passed at setup. Playwright and Chromium are available on the prepared cloud machine, but are not app runtime dependencies. Browser checks use a temporary database and cover demo isolation, responsive layout, ING-style import, quantities, cash, settings, separate histories, contributions, quotes, transactions, reports, events, persistence, export, CSP and JS errors.
+70 unit/HTTP tests and isolated browser workflows passed, including the supplied ING header layout with repeated currency columns and an explicit valuation date. Playwright and Chromium are available on the prepared cloud machine, but are not app runtime dependencies. Browser checks use a temporary database and cover demo isolation, responsive layout, ING-style import, quantities, cash, settings, separate histories, contributions, quotes, transactions, reports, events, persistence, export, CSP and JS errors.
 
 ## Quotes, reports and financial assumptions
 The user chose a free quote source, ING/EUR and dashboard-only notices. The custom network allowlist includes query1.finance.yahoo.com. Yahoo's public HTTPS endpoint needs no key. Only configured ticker symbols leave the application. On 2026-10-23 a live EUNL.DE fetch and isolated monitor run passed: 504 completed EUR daily observations through 2026-10-22 with adjusted closes. This does not verify other ETF mappings or guarantee availability. Avoid repetitive live calls during routine tests.
@@ -76,4 +76,4 @@ python -m finance.monitor --update
 
 The first checks stored data and saves local JSON/Markdown reports. The second additionally updates and values configured positions. Exit 0: no notices; 2: data/strategy notices; 1: update/technical failure. Missing initial holdings are expected data notices, not completed portfolio monitoring. The legacy finance.report JSON CLI remains supported.
 
-No authentic ING export has been tested, only synthetic formats. Full purchase-to-date total return/XIRR, holdings look-through, automatic news/macro analysis and fund metadata monitoring remain outside this version. Manually sourced events must be labelled as such; never infer market causes or promise the portfolio beats MSCI World.
+The user-supplied ING header layout is supported and tested with synthetic rows (examples/ing-holdings.csv); a complete authentic export has not been tested. The five currency columns retain their association with cost, quote and market value. Zeit is not automatically treated as a valuation date. Full purchase-to-date total return/XIRR, holdings look-through, automatic news/macro analysis and fund metadata monitoring remain outside this version. Manually sourced events must be labelled as such; never infer market causes or promise the portfolio beats MSCI World.

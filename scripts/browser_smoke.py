@@ -53,9 +53,17 @@ def main():
                 assert store.read()["holdings"] == [], "Demo changed real data"
                 page.set_viewport_size({"width": 1440, "height": 1080})
                 page.locator('.nav[data-page="import"]').click()
-                page.locator("#holdings-file").set_input_files(ROOT / "examples/ing-style.csv")
+                page.locator("#holdings-file").set_input_files(ROOT / "examples/ing-holdings.csv")
                 expect(page.locator("#mapping-panel")).to_be_visible()
                 expect(page.locator("#number-format")).to_have_value("german")
+                expect(page.locator("#map-name")).to_have_value("Wertpapiername")
+                expect(page.locator("#map-currency")).to_have_value("Währung (Kurswert)")
+                expect(page.locator("#map-cost_basis")).to_have_value("Einstandswert")
+                expect(page.locator("#map-as_of")).to_have_value("")
+                expect(page.locator("#import-summary")).to_contain_text("ING-Spaltenformat erkannt")
+                page.locator("#preview-import").click()
+                expect(page.locator("#error")).to_contain_text("Datum")
+                page.locator("#valuation-date").fill("2026-10-22")
                 page.locator("#preview-import").click()
                 expect(page.locator("#preview-table tr")).to_have_count(2)
                 expect(page.locator("#preview-table select").first).to_have_value("quality")
@@ -88,6 +96,7 @@ def main():
                 exported = json.loads(Path(download.value.path()).read_text())
                 assert len(exported["holdings"]) == 3
                 assert exported["config"]["equity_band_pp"] == 6
+                assert exported["holdings"][0]["cost_basis"] == 9000
                 page.locator('.nav[data-page="planning"]').click()
                 page.locator("#contribution-amount").fill("1000")
                 page.locator("#contribution-fee").fill("1")
